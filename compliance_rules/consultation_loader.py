@@ -30,15 +30,43 @@ def _checklists_path() -> str:
 CHECKLISTS_PATH = _checklists_path()
 
 
-def load_checklists_raw(path=None):
-    """consultation_checklists.json 을 원본 list 그대로 로드. 실패/비-list 시 []."""
+def _read_json(path=None):
     p = path or CHECKLISTS_PATH
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_checklists_raw(path=None):
+    """consultation_checklists.json 의 증상군 행(symptom_key 가 있는 dict)만 list 로 로드. 실패/비-list 시 [].
+
+    cl-v2 부터 목록 맨 앞에 symptom_key 없는 판 표시 행({"version": "cl-v2", ...})이 있다 — 증상군을
+    세는 쪽(DB 적재·증상군 목록)이 그 행에 걸리지 않도록 여기서 걸러 낸다. 판은 `load_checklists_version`.
+    """
     try:
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, list) else []
+        data = _read_json(path)
     except Exception:
         return []
+    if not isinstance(data, list):
+        return []
+    return [row for row in data if isinstance(row, dict) and row.get("symptom_key")]
+
+
+def load_checklists_version(path=None):
+    """체크리스트 판 표시(cl-v2 …). 목록이면 symptom_key 없는 행의 version, 객체면 최상위 version.
+    표시가 없으면 None(= 골격 커밋의 판, cl-v1). 판정기(medical_eval sv-v3)도 같은 규칙으로 읽어
+    결과 `checklist.version` 으로 내보낸다."""
+    try:
+        data = _read_json(path)
+    except Exception:
+        return None
+    if isinstance(data, dict):
+        v = data.get("version")
+        return str(v) if v is not None else None
+    if isinstance(data, list):
+        for row in data:
+            if isinstance(row, dict) and not row.get("symptom_key") and row.get("version"):
+                return str(row["version"])
+    return None
 
 
 def load_checklists_by_symptom(path=None):
